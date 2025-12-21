@@ -108,7 +108,7 @@ export default function HomePage() {
             {/* Footer */}
             <footer className="mt-24 py-12 border-t border-white/10">
                 <div className="max-w-7xl mx-auto px-6 text-center text-dark-text/60">
-                    <p>&copy; 2024 StockScope. Built for serious traders and investors.</p>
+                    <p>&copy; 2025 StockScope. Built for serious traders and investors.</p>
                 </div>
             </footer>
         </div>

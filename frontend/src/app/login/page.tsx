@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -11,8 +11,15 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
+    const { login, isAuthenticated } = useAuth();
     const router = useRouter();
+
+    // If already logged in, redirect to dashboard
+    useEffect(() => {
+        if (isAuthenticated) {
+            router.push('/dashboard');
+        }
+    }, [isAuthenticated, router]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -21,6 +28,8 @@ export default function LoginPage() {
 
         try {
             await login(username, password);
+            // Small delay to ensure state propagates before navigation
+            await new Promise(resolve => setTimeout(resolve, 100));
             router.push('/dashboard');
         } catch (err: any) {
             setError(err.message || 'Login failed');

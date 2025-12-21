@@ -13,6 +13,11 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     FLASK_APP = os.getenv('FLASK_APP', 'app.py')
     
+    # Supabase
+    SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+    SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY', '')
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
+    
     # Database
     SQLALCHEMY_DATABASE_URI = os.getenv(
         'DATABASE_URL',
@@ -23,7 +28,7 @@ class Config:
     
     # JWT
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)  # 24 hours for development
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
     JWT_TOKEN_LOCATION = ['headers']
     JWT_HEADER_NAME = 'Authorization'

@@ -9,11 +9,18 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     const router = useRouter();
 
     useEffect(() => {
+        // Only redirect if we're sure the user is not authenticated
+        // This prevents redirects while auth is still being checked
         if (!loading && !isAuthenticated) {
-            router.push('/login');
+            // Double-check localStorage before redirecting (only in browser)
+            const hasToken = typeof window !== 'undefined' && localStorage.getItem('access_token');
+            if (!hasToken) {
+                router.push('/login');
+            }
         }
     }, [isAuthenticated, loading, router]);
 
+    // Show loading state while checking auth
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-dark-bg via-primary-900 to-dark-bg flex items-center justify-center">
@@ -25,9 +32,12 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
         );
     }
 
-    if (!isAuthenticated) {
+    // If not authenticated and no token in localStorage, return null (will redirect via useEffect)
+    // Check if window exists to avoid SSR errors
+    if (!isAuthenticated && (typeof window === 'undefined' || !localStorage.getItem('access_token'))) {
         return null;
     }
 
+    // User is authenticated or has a token, show the protected content
     return <>{children}</>;
 }

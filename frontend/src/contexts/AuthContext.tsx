@@ -42,14 +42,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = async () => {
         try {
             const token = localStorage.getItem('access_token');
-            if (token) {
+
+            // If no token exists, no need to make API call
+            if (!token) {
+                setLoading(false);
+                return;
+            }
+
+            // Token exists, verify it with the server
+            try {
                 const response = await authAPI.getCurrentUser();
                 setUser(response.data.user);
+            } catch (error: any) {
+                // Only clear tokens on authentication errors, not network errors
+                if (error.response?.status === 401) {
+                    console.log('Authentication expired, clearing tokens');
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    setUser(null);
+                } else {
+                    // For network errors or other issues, assume user is still valid if we have a token
+                    // The API interceptor will handle token refresh if needed
+                    console.error('Auth check failed (non-auth error):', error.message);
+
+                    // Don't clear user state on transient failures
+                    // Just log the error and keep the user logged in
+                }
             }
         } catch (error) {
-            console.error('Auth check failed:', error);
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
+            console.error('Unexpected error in checkAuth:', error);
         } finally {
             setLoading(false);
         }
@@ -88,6 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.href = '/';
     };
 
+    // Improved isAuthenticated check
+    // User is authenticated if:
+    // 1. We have a user object in state, OR
+    // 2. We have a valid access token in localStorage (means we're in the process of loading user data)
+    // Note: Check if window exists to avoid SSR errors
+    const isAuthenticated = !!user || (typeof window !== 'undefined' && !!localStorage.getItem('access_token'));
+
     return (
         <AuthContext.Provider
             value={{
@@ -96,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 login,
                 register,
                 logout,
-                isAuthenticated: !!user,
+                isAuthenticated,
             }}
         >
             {children}

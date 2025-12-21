@@ -275,12 +275,54 @@ class StockDataService:
         Returns:
             Dictionary with 'gainers' and 'losers' lists
         """
-        # Note: This would typically use a dedicated API
-        # For demo purposes, returning sample structure
-        return {
-            'gainers': [],
-            'losers': []
-        }
+        try:
+            # Define popular stocks for different markets
+            if market == 'US':
+                symbols = [
+                    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD',
+                    'NFLX', 'DIS', 'PYPL', 'INTC', 'CSCO', 'ADBE', 'CRM', 'ORCL',
+                    'BAC', 'JPM', 'WMT', 'V', 'MA', 'HD', 'PFE', 'KO', 'PEP'
+                ]
+            elif market == 'IN':
+                symbols = [
+                    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'HINDUNILVR.NS',
+                    'ICICIBANK.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'ITC.NS', 'KOTAKBANK.NS',
+                    'LT.NS', 'AXISBANK.NS', 'ASIANPAINT.NS', 'MARUTI.NS', 'HCLTECH.NS'
+                ]
+            else:
+                logger.warning(f"Unsupported market: {market}, defaulting to US")
+                symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+            
+            # Fetch quotes for all symbols
+            stocks_with_change = []
+            for symbol in symbols:
+                try:
+                    quote = self.get_quote(symbol)
+                    if quote and quote.get('change_percent') is not None:
+                        stocks_with_change.append(quote)
+                except Exception as e:
+                    logger.debug(f"Failed to get quote for {symbol}: {e}")
+                    continue
+            
+            # Sort by percentage change
+            stocks_with_change.sort(key=lambda x: x['change_percent'], reverse=True)
+            
+            # Split into gainers (positive change) and losers (negative change)
+            gainers = [s for s in stocks_with_change if s['change_percent'] > 0][:limit]
+            losers = [s for s in stocks_with_change if s['change_percent'] < 0][-limit:]
+            losers.reverse()  # Show worst performers first
+            
+            return {
+                'gainers': gainers,
+                'losers': losers
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting top gainers/losers: {e}")
+            return {
+                'gainers': [],
+                'losers': []
+            }
     
     def validate_symbol(self, symbol: str) -> bool:
         """
