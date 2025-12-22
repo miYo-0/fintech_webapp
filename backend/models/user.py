@@ -16,11 +16,12 @@ class User(db.Model):
     first_name = db.Column(db.String(50))
     last_name = db.Column(db.String(50))
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    is_admin = db.Column(db.Boolean, default=False, nullable=False)
-    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    # is_admin and email_verified removed as they are missing in Supabase schema
+    # is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    # email_verified = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    last_login = db.Column(db.DateTime)
+    last_login_at = db.Column(db.DateTime)
     
     # Preferences
     preferred_market = db.Column(db.String(10), default='US')  # US, IN, etc.
@@ -51,11 +52,11 @@ class User(db.Model):
             'first_name': self.first_name,
             'last_name': self.last_name,
             'is_active': self.is_active,
-            'email_verified': self.email_verified,
+            # 'email_verified': self.email_verified,
             'preferred_market': self.preferred_market,
             'theme': self.theme,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'last_login': self.last_login.isoformat() if self.last_login else None
+            'last_login_at': self.last_login_at.isoformat() if self.last_login_at else None
         }
         
         if include_email:
@@ -65,5 +66,5 @@ class User(db.Model):
     
     def update_last_login(self):
         """Update last login timestamp."""
-        self.last_login = datetime.utcnow()
+        self.last_login_at = datetime.utcnow()
         db.session.commit()

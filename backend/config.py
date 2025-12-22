@@ -30,9 +30,16 @@ class Config:
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)  # 24 hours for development
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    JWT_TOKEN_LOCATION = ['headers']
-    JWT_HEADER_NAME = 'Authorization'
-    JWT_HEADER_TYPE = 'Bearer'
+    
+    # Cookie-based JWT configuration
+    JWT_TOKEN_LOCATION = ['cookies']
+    JWT_COOKIE_SECURE = False  # Must be False on localhost (no HTTPS)
+    JWT_COOKIE_CSRF_PROTECT = False  # Disable CSRF for development (enable in production)
+    JWT_ACCESS_COOKIE_NAME = 'access_token_cookie'
+    JWT_REFRESH_COOKIE_NAME = 'refresh_token_cookie'
+    JWT_COOKIE_SAMESITE = 'Lax'  # Lax works for same-site requests (localhost:3000 -> localhost:5000)
+    # No JWT_COOKIE_DOMAIN - let browser handle domain automatically
+    JWT_SESSION_COOKIE = True  # Session cookies - expire when browser closes
     
     # Redis
     REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')

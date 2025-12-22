@@ -2,42 +2,49 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, checkAuth } = useAuth();
     const router = useRouter();
+    const [authChecked, setAuthChecked] = useState(false);
 
     useEffect(() => {
-        // Only redirect if we're sure the user is not authenticated
-        // This prevents redirects while auth is still being checked
-        if (!loading && !isAuthenticated) {
-            // Double-check localStorage before redirecting (only in browser)
-            const hasToken = typeof window !== 'undefined' && localStorage.getItem('access_token');
-            if (!hasToken) {
-                router.push('/login');
+        // Check authentication when protected route is accessed
+        const verifyAuth = async () => {
+            if (!authChecked) {
+                await checkAuth();
+                setAuthChecked(true);
             }
+        };
+
+        verifyAuth();
+    }, [authChecked, checkAuth]);
+
+    useEffect(() => {
+        // Redirect to login if not authenticated after check is complete
+        if (authChecked && !loading && !isAuthenticated) {
+            router.push('/login');
         }
-    }, [isAuthenticated, loading, router]);
+    }, [authChecked, isAuthenticated, loading, router]);
 
     // Show loading state while checking auth
-    if (loading) {
+    if (!authChecked || loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-dark-bg via-primary-900 to-dark-bg flex items-center justify-center">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary-500 mx-auto"></div>
-                    <p className="mt-4 text-dark-text/60">Loading...</p>
+                    <p className="mt-4 text-dark-text/60">Verifying authentication...</p>
                 </div>
             </div>
         );
     }
 
-    // If not authenticated and no token in localStorage, return null (will redirect via useEffect)
-    // Check if window exists to avoid SSR errors
-    if (!isAuthenticated && (typeof window === 'undefined' || !localStorage.getItem('access_token'))) {
+    // If not authenticated, return null (will redirect via useEffect)
+    if (!isAuthenticated) {
         return null;
     }
 
-    // User is authenticated or has a token, show the protected content
+    // User is authenticated, show the protected content
     return <>{children}</>;
 }

@@ -18,6 +18,7 @@ interface AuthContextType {
     register: (data: RegisterData) => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
+    checkAuth: () => Promise<void>;  // Added for lazy auth checking
 }
 
 interface RegisterData {
@@ -34,43 +35,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // Don't check auth automatically on page load
+    // Only check when user navigates to protected routes
     useEffect(() => {
-        // Check if user is logged in on mount
-        checkAuth();
+        // checkAuth(); // Disabled - lazy auth checking
+        setLoading(false); // Stop loading immediately since we're not checking
     }, []);
 
     const checkAuth = async () => {
         try {
-            const token = localStorage.getItem('access_token');
-
-            // If no token exists, no need to make API call
-            if (!token) {
-                setLoading(false);
-                return;
+            // Just try to get current user - cookies sent automatically
+            const response = await authAPI.getCurrentUser();
+            setUser(response.data.user);
+        } catch (error: any) {
+            // If 401, user is not authenticated
+            if (error.response?.status === 401) {
+                setUser(null);
             }
-
-            // Token exists, verify it with the server
-            try {
-                const response = await authAPI.getCurrentUser();
-                setUser(response.data.user);
-            } catch (error: any) {
-                // Only clear tokens on authentication errors, not network errors
-                if (error.response?.status === 401) {
-                    console.log('Authentication expired, clearing tokens');
-                    localStorage.removeItem('access_token');
-                    localStorage.removeItem('refresh_token');
-                    setUser(null);
-                } else {
-                    // For network errors or other issues, assume user is still valid if we have a token
-                    // The API interceptor will handle token refresh if needed
-                    console.error('Auth check failed (non-auth error):', error.message);
-
-                    // Don't clear user state on transient failures
-                    // Just log the error and keep the user logged in
-                }
-            }
-        } catch (error) {
-            console.error('Unexpected error in checkAuth:', error);
+            // For other errors, don't change state
         } finally {
             setLoading(false);
         }
@@ -79,10 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const login = async (username: string, password: string) => {
         try {
             const response = await authAPI.login({ username, password });
-            const { user, access_token, refresh_token } = response.data;
+            const { user } = response.data;
 
-            localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
+            // No need to store tokens - they're in HttpOnly cookies
             setUser(user);
         } catch (error: any) {
             throw new Error(error.response?.data?.error || 'Login failed');
@@ -92,29 +73,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const register = async (data: RegisterData) => {
         try {
             const response = await authAPI.register(data);
-            const { user, access_token, refresh_token } = response.data;
+            const { user } = response.data;
 
-            localStorage.setItem('access_token', access_token);
-            localStorage.setItem('refresh_token', refresh_token);
+            // No need to store tokens - they're in HttpOnly cookies
             setUser(user);
         } catch (error: any) {
             throw new Error(error.response?.data?.error || 'Registration failed');
         }
     };
 
-    const logout = () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+    const logout = async () => {
+        try {
+            await authAPI.logout();
+        } catch (error) {
+            // Ignore errors
+        }
         setUser(null);
         window.location.href = '/';
     };
 
-    // Improved isAuthenticated check
-    // User is authenticated if:
-    // 1. We have a user object in state, OR
-    // 2. We have a valid access token in localStorage (means we're in the process of loading user data)
-    // Note: Check if window exists to avoid SSR errors
-    const isAuthenticated = !!user || (typeof window !== 'undefined' && !!localStorage.getItem('access_token'));
+    // User is authenticated if we have a user object
+    const isAuthenticated = !!user;
 
     return (
         <AuthContext.Provider
@@ -125,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 register,
                 logout,
                 isAuthenticated,
+                checkAuth,  // Added for lazy auth checking
             }}
         >
             {children}

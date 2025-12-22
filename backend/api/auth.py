@@ -5,7 +5,10 @@ from flask_jwt_extended import (
     create_refresh_token,
     jwt_required,
     get_jwt_identity,
-    get_jwt
+    get_jwt,
+    set_access_cookies,
+    set_refresh_cookies,
+    unset_jwt_cookies
 )
 from models import db
 from models.user import User
@@ -47,21 +50,25 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        # Create tokens
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # Create tokens and set cookies
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
-        return jsonify({
+        response = jsonify({
             'message': 'User registered successfully',
-            'user': user.to_dict(),
-            'access_token': access_token,
-            'refresh_token': refresh_token
-        }), 201
+            'user': user.to_dict()
+        })
+        
+        # Set HttpOnly cookies
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response, refresh_token)
+        
+        return response, 201
         
     except Exception as e:
         logger.error(f"Registration error: {e}")
         db.session.rollback()
-        return jsonify({'error': 'Registration failed'}), 500
+        return jsonify({'error': f'Registration failed: {str(e)}'}), 500
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -88,16 +95,20 @@ def login():
         # Update last login
         user.update_last_login()
         
-        # Create tokens
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # Create tokens and set cookies
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
-        return jsonify({
+        response = jsonify({
             'message': 'Login successful',
-            'user': user.to_dict(include_email=True),
-            'access_token': access_token,
-            'refresh_token': refresh_token
-        }), 200
+            'user': user.to_dict(include_email=True)
+        })
+        
+        # Set HttpOnly cookies
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response, refresh_token)
+        
+        return response, 200
         
     except Exception as e:
         logger.error(f"Login error: {e}")
@@ -110,15 +121,28 @@ def refresh():
     """Refresh access token."""
     try:
         identity = get_jwt_identity()
-        access_token = create_access_token(identity=identity)
+        access_token = create_access_token(identity=str(identity))
         
-        return jsonify({
-            'access_token': access_token
-        }), 200
+        response = jsonify({'message': 'Token refreshed'})
+        set_access_cookies(response, access_token)
+        
+        return response, 200
         
     except Exception as e:
         logger.error(f"Token refresh error: {e}")
         return jsonify({'error': 'Token refresh failed'}), 500
+
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    """Logout user by clearing cookies."""
+    try:
+        response = jsonify({'message': 'Logout successful'})
+        unset_jwt_cookies(response)
+        return response, 200
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'error': 'Logout failed'}), 500
 
 
 @auth_bp.route('/me', methods=['GET'])
@@ -127,7 +151,7 @@ def get_current_user():
     """Get current user profile."""
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = User.query.get(int(user_id))
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -147,7 +171,7 @@ def update_profile():
     """Update user profile."""
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = User.query.get(int(user_id))
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -183,7 +207,7 @@ def change_password():
     """Change user password."""
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = User.query.get(int(user_id))
         
         if not user:
             return jsonify({'error': 'User not found'}), 404

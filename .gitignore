@@ -81,3 +81,7 @@ coverage/
 # Build artifacts
 *.pyc
 .cache
+
+# Cookies
+cookies.txt
+cookies2.txt
