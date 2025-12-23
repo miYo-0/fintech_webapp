@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FiTrendingUp, FiSearch, FiBarChart2, FiDollarSign } from 'react-icons/fi';
 import { marketAPI } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import type { MarketIndex } from '@/types';
 
 export default function HomePage() {
     const [indices, setIndices] = useState<MarketIndex[]>([]);
     const [loading, setLoading] = useState(true);
+    const { isAuthenticated } = useAuth();
+    const router = useRouter();
 
     useEffect(() => {
         loadMarketData();
@@ -22,6 +26,14 @@ export default function HomePage() {
             console.error('Failed to load indices:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleExploreClick = () => {
+        if (isAuthenticated) {
+            router.push('/market');
+        } else {
+            router.push('/login');
         }
     };
 
@@ -42,9 +54,9 @@ export default function HomePage() {
                         <Link href="/register" className="px-8 py-4 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition transform hover:scale-105">
                             Start Free Trial
                         </Link>
-                        <Link href="/market" className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-lg font-semibold hover:bg-white/20 transition">
+                        <button onClick={handleExploreClick} className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-lg font-semibold hover:bg-white/20 transition">
                             Explore Markets
-                        </Link>
+                        </button>
                     </div>
                 </div>
 

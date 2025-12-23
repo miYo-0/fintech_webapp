@@ -39,22 +39,12 @@ DEMO_STOCKS = {
 class StockDataService:
     """Service for fetching stock market data."""
     
-    def __init__(self, config=None, cache_service=None):
+    def __init__(self, config=None):
         """Initialize stock data service."""
         self.config = config or {}
-        self.cache_service = cache_service
         self.alpha_vantage_key = self.config.get('ALPHA_VANTAGE_API_KEY', '')
         self.finnhub_key = self.config.get('FINNHUB_API_KEY', '')
         self.polygon_key = self.config.get('POLYGON_API_KEY', '')
-        
-        # Initialize Alpha Vantage service if API key available
-        self.alpha_vantage = None
-        if self.alpha_vantage_key:
-            from services.alpha_vantage_service import AlphaVantageService
-            self.alpha_vantage = AlphaVantageService(self.alpha_vantage_key, cache_service)
-            logger.info("Alpha Vantage service enabled (cache-first strategy)")
-        else:
-            logger.warning("No Alpha Vantage API key found, using Yahoo Finance only")
     
     def search_stocks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
@@ -134,29 +124,12 @@ class StockDataService:
         """
         Get real-time quote for a stock.
         
-        Strategy:
-        1. Try Alpha Vantage first (if enabled) - cache-first, real-time
-        2. Fall back to Yahoo Finance if Alpha Vantage unavailable
-        
         Args:
             symbol: Stock symbol
             
         Returns:
             Dictionary with quote data including price, change, volume
         """
-        # Try Alpha Vantage first (if enabled)
-        if self.alpha_vantage:
-            try:
-                av_quote = self.alpha_vantage.get_quote(symbol)
-                if av_quote:
-                    logger.info(f"✅ Quote for {symbol} from Alpha Vantage")
-                    return av_quote
-                else:
-                    logger.debug(f"Alpha Vantage returned no data for {symbol}, trying Yahoo Finance")
-            except Exception as e:
-                logger.warning(f"Alpha Vantage error for {symbol}: {e}, falling back to Yahoo Finance")
-        
-        # Fall back to Yahoo Finance
         try:
             ticker = yf.Ticker(symbol)
             info = ticker.info
@@ -194,17 +167,15 @@ class StockDataService:
                 'avg_volume': info.get('averageVolume'),
                 'exchange': info.get('exchange', 'UNKNOWN'),
                 'currency': info.get('currency', 'USD'),
-                'updated_at': datetime.utcnow().isoformat(),
-                'source': 'yahoo_finance'
+                'updated_at': datetime.utcnow().isoformat()
             }
             
-            logger.info(f"📊 Quote for {symbol} from Yahoo Finance (fallback)")
             return quote
             
         except Exception as e:
             logger.error(f"Error getting quote for {symbol}: {e}")
             return None
-
+    
     def get_historical_data(
         self,
         symbol: str,
@@ -214,10 +185,6 @@ class StockDataService:
         """
         Get historical price data for a stock.
         
-        Strategy:
-        1. Try Alpha Vantage first (if enabled) for daily data
-        2. Fall back to Yahoo Finance if Alpha Vantage unavailable
-        
         Args:
             symbol: Stock symbol
             period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
@@ -226,22 +193,6 @@ class StockDataService:
         Returns:
             List of historical price dictionaries
         """
-        # Try Alpha Vantage first for daily data (if enabled and interval is 1d)
-        if self.alpha_vantage and interval == '1d':
-            try:
-                # Use 'full' for periods longer than 100 days, 'compact' otherwise
-                outputsize = 'full' if period in ['1y', '2y', '5y', '10y', 'max'] else 'compact'
-                av_data = self.alpha_vantage.get_historical_data(symbol, outputsize)
-                
-                if av_data:
-                    logger.info(f"✅ Historical data for {symbol} from Alpha Vantage")
-                    return av_data
-                else:
-                    logger.debug(f"Alpha Vantage returned no historical data for {symbol}")
-            except Exception as e:
-                logger.warning(f"Alpha Vantage historical error for {symbol}: {e}, falling back to Yahoo Finance")
-        
-        # Fall back to Yahoo Finance
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period, interval=interval)
@@ -261,14 +212,12 @@ class StockDataService:
                     'volume': int(row['Volume'])
                 })
             
-            logger.info(f"📊 Historical data for {symbol} from Yahoo Finance (fallback)")
             return data
             
         except Exception as e:
             logger.error(f"Error getting historical data for {symbol}: {e}")
             return []
-
-
+    
     def get_company_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Get detailed company information.
@@ -315,31 +264,26 @@ class StockDataService:
     
     def get_market_indices(self) -> List[Dict[str, Any]]:
         """
-        Get major market stocks/indices quotes.
-        
-        Note: Using popular stocks instead of indices since Alpha Vantage
-        doesn't support index symbols like ^GSPC, ^DJI
+        Get major market indices quotes.
         
         Returns:
-            List of stock quotes (labeled as market leaders for display)
+            List of index quotes
         """
-        # Popular stocks that Alpha Vantage supports
-        market_symbols = {
-            'AAPL': 'Apple Inc.',
-            'MSFT': 'Microsoft Corp.',
-            'GOOGL': 'Alphabet Inc.',
-            'AMZN': 'Amazon.com Inc.',
-            'TSLA': 'Tesla Inc.',
-            'META': 'Meta Platforms Inc.',
-            'NVDA': 'NVIDIA Corp.'
+        indices_symbols = {
+            '^GSPC': 'S&P 500',
+            '^DJI': 'Dow Jones',
+            '^IXIC': 'NASDAQ',
+            '^RUT': 'Russell 2000',
+            '^VIX': 'VIX',
+            '^NSEI': 'Nifty 50',
+            '^BSESN': 'Sensex'
         }
         
         indices = []
-        for symbol, name in market_symbols.items():
+        for symbol, name in indices_symbols.items():
             quote = self.get_quote(symbol)
             if quote:
                 quote['name'] = name
-                quote['category'] = 'market_leader'  # Tag for frontend display
                 indices.append(quote)
         
         return indices

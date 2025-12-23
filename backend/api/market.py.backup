@@ -10,15 +10,12 @@ market_bp = Blueprint('market', __name__, url_prefix='/api/market')
 
 
 def get_services():
-    """Get service instances with cache support."""
+    """Get service instances."""
+    stock_service = StockDataService(current_app.config)
     cache_service = CacheService(
         current_app.config.get('REDIS_URL'),
         current_app.config.get('CACHE_DEFAULT_TIMEOUT', 300)
     )
-    
-    # Pass cache_service to StockDataService for Alpha Vantage caching
-    stock_service = StockDataService(current_app.config, cache_service)
-    
     return stock_service, cache_service
 
 

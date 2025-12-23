@@ -79,32 +79,6 @@ def get_stock_quote(symbol):
         # Cache for 1 minute
         cache_service.set(cache_key, quote, timeout=60)
         
-        # Update or create stock in database
-        stock = Stock.query.filter_by(symbol=symbol).first()
-        if stock:
-            stock.last_price = quote['price']
-            stock.price_change = quote['change']
-            stock.price_change_percent = quote['change_percent']
-            stock.volume = quote['volume']
-            stock.quote_updated_at = datetime.utcnow()
-        else:
-            stock = Stock(
-                symbol=symbol,
-                name=quote['name'],
-                exchange=quote.get('exchange', 'UNKNOWN'),
-                market='US',  # Default, should be determined properly
-                last_price=quote['price'],
-                price_change=quote['change'],
-                price_change_percent=quote['change_percent'],
-                volume=quote['volume'],
-                market_cap=quote.get('market_cap'),
-                currency=quote.get('currency', 'USD'),
-                quote_updated_at=datetime.utcnow()
-            )
-            db.session.add(stock)
-        
-        db.session.commit()
-        
         return jsonify(quote), 200
         
     except Exception as e:

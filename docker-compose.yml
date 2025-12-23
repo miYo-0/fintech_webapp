@@ -32,6 +32,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       SOCKETIO_MESSAGE_QUEUE: redis://redis:6379/3
       CORS_ORIGINS: http://localhost:3000
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY}
+      POLYGON_API_KEY: ${POLYGON_API_KEY}
     ports:
       - "5000:5000"
     volumes:

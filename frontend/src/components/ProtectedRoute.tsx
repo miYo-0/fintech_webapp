@@ -24,7 +24,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     useEffect(() => {
         // Redirect to login if not authenticated after check is complete
         if (authChecked && !loading && !isAuthenticated) {
-            router.push('/login');
+            router.replace('/login');
         }
     }, [authChecked, isAuthenticated, loading, router]);
 

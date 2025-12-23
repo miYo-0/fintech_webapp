@@ -152,32 +152,67 @@ export default function StockDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {indicators.rsi !== undefined && (
+                            {indicators.indicators?.rsi_14 !== undefined && (
                                 <div>
                                     <div className="text-dark-text/60 text-sm mb-1">RSI (14)</div>
                                     <div className="text-2xl font-bold text-white">
-                                        {indicators.rsi.toFixed(2)}
+                                        {indicators.indicators.rsi_14.toFixed(2)}
                                     </div>
                                     <div className="text-sm text-dark-text/60 mt-1">
-                                        {indicators.rsi > 70 ? 'Overbought' : indicators.rsi < 30 ? 'Oversold' : 'Neutral'}
+                                        {indicators.indicators.rsi_14 > 70 ? 'Overbought' : indicators.indicators.rsi_14 < 30 ? 'Oversold' : 'Neutral'}
                                     </div>
                                 </div>
                             )}
 
-                            {indicators.macd !== undefined && (
+                            {indicators.indicators?.macd !== undefined && (
                                 <div>
                                     <div className="text-dark-text/60 text-sm mb-1">MACD</div>
                                     <div className="text-2xl font-bold text-white">
-                                        {indicators.macd.toFixed(2)}
+                                        {indicators.indicators.macd.toFixed(2)}
+                                    </div>
+                                    <div className="text-sm text-dark-text/60 mt-1">
+                                        Signal: {indicators.indicators.signal?.toFixed(2) || 'N/A'}
                                     </div>
                                 </div>
                             )}
 
-                            {indicators.sma_50 !== undefined && (
+                            {indicators.indicators?.sma_50 !== undefined && (
                                 <div>
                                     <div className="text-dark-text/60 text-sm mb-1">SMA (50)</div>
                                     <div className="text-2xl font-bold text-white">
-                                        ${indicators.sma_50.toFixed(2)}
+                                        ${indicators.indicators.sma_50.toFixed(2)}
+                                    </div>
+                                </div>
+                            )}
+
+                            {indicators.indicators?.sma_20 !== undefined && (
+                                <div>
+                                    <div className="text-dark-text/60 text-sm mb-1">SMA (20)</div>
+                                    <div className="text-2xl font-bold text-white">
+                                        ${indicators.indicators.sma_20.toFixed(2)}
+                                    </div>
+                                </div>
+                            )}
+
+                            {indicators.indicators?.trend !== undefined && (
+                                <div>
+                                    <div className="text-dark-text/60 text-sm mb-1">Trend</div>
+                                    <div className={`text-2xl font-bold ${indicators.indicators.trend === 'BULLISH' ? 'positive' :
+                                            indicators.indicators.trend === 'BEARISH' ? 'negative' : 'text-white'
+                                        }`}>
+                                        {indicators.indicators.trend}
+                                    </div>
+                                </div>
+                            )}
+
+                            {indicators.indicators?.bb_upper !== undefined && (
+                                <div>
+                                    <div className="text-dark-text/60 text-sm mb-1">Bollinger Bands</div>
+                                    <div className="text-lg font-bold text-white">
+                                        U: ${indicators.indicators.bb_upper.toFixed(2)}
+                                    </div>
+                                    <div className="text-sm text-dark-text/60">
+                                        L: ${indicators.indicators.bb_lower?.toFixed(2) || 'N/A'}
                                     </div>
                                 </div>
                             )}
