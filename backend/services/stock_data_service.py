@@ -1,426 +1,181 @@
-"""Stock data service for fetching market data from multiple sources."""
-import yfinance as yf
-import requests
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from functools import wraps
+"""Stock data service - Finnhub PRIMARY + Alpha Vantage for historical ONLY"""
 import logging
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Cache TTL constants (in seconds)
-CACHE_TTL = {
-    'indices': 1800,      # 30 minutes - indices change slowly
-    'quote': 300,         # 5 minutes - stock quotes more dynamic
-    'historical': 3600,   # 1 hour - historical data doesn't change
-    'movers': 900,        # 15 minutes - top movers update periodically
-}
-
-# Demo data for fallback when API is rate-limited
-DEMO_INDICES = {
-    '^GSPC': {'symbol': '^GSPC', 'name': 'S&P 500', 'price': 4783.45, 'change': 11.23, 'change_percent': 0.23},
-    '^DJI': {'symbol': '^DJI', 'name': 'Dow Jones', 'price': 37305.16, 'change': 44.85, 'change_percent': 0.12},
-    '^IXIC': {'symbol': '^IXIC', 'name': 'NASDAQ', 'price': 14813.92, 'change': 62.17, 'change_percent': 0.42},
-    '^RUT': {'symbol': '^RUT', 'name': 'Russell 2000', 'price': 2028.98, 'change': -5.32, 'change_percent': -0.26},
-    '^VIX': {'symbol': '^VIX', 'name': 'VIX', 'price': 13.42, 'change': -0.31, 'change_percent': -2.26},
-    '^NSEI': {'symbol': '^NSEI', 'name': 'Nifty 50', 'price': 21852.20, 'change': 89.40, 'change_percent': 0.41},
-    '^BSESN': {'symbol': '^BSESN', 'name': 'Sensex', 'price': 72426.60, 'change': 314.29, 'change_percent': 0.44},
-}
-
-DEMO_STOCKS = {
-    'AAPL': {'symbol': 'AAPL', 'name': 'Apple Inc.', 'price': 193.58, 'change': 2.45, 'change_percent': 1.28},
-    'MSFT': {'symbol': 'MSFT', 'name': 'Microsoft Corporation', 'price': 374.23, 'change': -1.12, 'change_percent': -0.30},
-    'GOOGL': {'symbol': 'GOOGL', 'name': 'Alphabet Inc.', 'price': 140.15, 'change': 0.85, 'change_percent': 0.61},
-    'AMZN': {'symbol': 'AMZN', 'name': 'Amazon.com Inc.', 'price': 153.37, 'change': 1.48, 'change_percent': 0.97},
-    'TSLA': {'symbol': 'TSLA', 'name': 'Tesla Inc.', 'price': 248.52, 'change': -3.21, 'change_percent': -1.27},
-}
-
 
 class StockDataService:
-    """Service for fetching stock market data."""
+    """Service for fetching stock market data using Finnhub + Alpha Vantage (historical only)"""
     
     def __init__(self, config=None, cache_service=None):
-        """Initialize stock data service."""
+        """Initialize stock data service"""
         self.config = config or {}
         self.cache_service = cache_service
-        self.alpha_vantage_key = self.config.get('ALPHA_VANTAGE_API_KEY', '')
         self.finnhub_key = self.config.get('FINNHUB_API_KEY', '')
-        self.polygon_key = self.config.get('POLYGON_API_KEY', '')
+        self.alpha_vantage_key = self.config.get('ALPHA_VANTAGE_API_KEY', '')
         
-        # Initialize Alpha Vantage service if API key available
+        # Initialize Finnhub (PRIMARY for quotes)
+        self.finnhub = None
+        if self.finnhub_key:
+            from services.finnhub_service import FinnhubService
+            self.finnhub = FinnhubService(self.finnhub_key, cache_service)
+            logger.info("✅ Finnhub PRIMARY (quotes, 60/min)")
+        else:
+            logger.error("❌ NO FINNHUB API KEY!")
+        
+        # Initialize Alpha Vantage (SECONDARY for historical data ONLY)
         self.alpha_vantage = None
         if self.alpha_vantage_key:
             from services.alpha_vantage_service import AlphaVantageService
             self.alpha_vantage = AlphaVantageService(self.alpha_vantage_key, cache_service)
-            logger.info("Alpha Vantage service enabled (cache-first strategy)")
+            logger.info("✅ Alpha Vantage SECONDARY (historical only, 5/min)")
         else:
-            logger.warning("No Alpha Vantage API key found, using Yahoo Finance only")
+            logger.warning("⚠️ No Alpha Vantage - historical data limited")
     
     def search_stocks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Search for stocks by symbol or name.
-        
-        Args:
-            query: Search query string
-            limit: Maximum number of results
-            
-        Returns:
-            List of stock dictionaries with symbol, name, exchange info
-        """
-        try:
-            # Using yfinance Ticker search via direct lookup for now
-            # For production, consider using a dedicated search API
-            
-            results = []
-            
-            # Try exact symbol match first
-            try:
-                ticker = yf.Ticker(query.upper())
-                info = ticker.info
-                
-                if info and 'symbol' in info:
-                    results.append({
-                        'symbol': info.get('symbol', query.upper()),
-                        'name': info.get('longName', info.get('shortName', '')),
-                        'exchange': info.get('exchange', 'UNKNOWN'),
-                        'type': info.get('quoteType', 'EQUITY'),
-                        'currency': info.get('currency', 'USD')
-                    })
-            except Exception as e:
-                logger.debug(f"Symbol lookup failed for {query}: {e}")
-            
-            # For better search, use Alpha Vantage if available
-            if self.alpha_vantage_key and len(results) == 0:
-                results = self._search_alpha_vantage(query, limit)
-            
-            return results[:limit]
-            
-        except Exception as e:
-            logger.error(f"Error searching stocks: {e}")
-            return []
-    
-    def _search_alpha_vantage(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search using Alpha Vantage API."""
-        try:
-            url = 'https://www.alphavantage.co/query'
-            params = {
-                'function': 'SYMBOL_SEARCH',
-                'keywords': query,
-                'apikey': self.alpha_vantage_key
-            }
-            
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            results = []
-            for match in data.get('bestMatches', [])[:limit]:
-                results.append({
-                    'symbol': match.get('1. symbol', ''),
-                    'name': match.get('2. name', ''),
-                    'type': match.get('3. type', ''),
-                    'region': match.get('4. region', ''),
-                    'currency': match.get('8. currency', 'USD'),
-                    'exchange': match.get('4. region', 'US')
-                })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Alpha Vantage search error: {e}")
-            return []
+        """Search stocks - simplified version"""
+        return [{'symbol': query.upper(), 'name': query.upper(), 'exchange': 'US', 'type': 'EQUITY'}]
     
     def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """
-        Get real-time quote for a stock.
-        
-        Strategy:
-        1. Try Alpha Vantage first (if enabled) - cache-first, real-time
-        2. Fall back to Yahoo Finance if Alpha Vantage unavailable
-        
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            Dictionary with quote data including price, change, volume
-        """
-        # Try Alpha Vantage first (if enabled)
-        if self.alpha_vantage:
-            try:
-                av_quote = self.alpha_vantage.get_quote(symbol)
-                if av_quote:
-                    logger.info(f"✅ Quote for {symbol} from Alpha Vantage")
-                    return av_quote
-                else:
-                    logger.debug(f"Alpha Vantage returned no data for {symbol}, trying Yahoo Finance")
-            except Exception as e:
-                logger.warning(f"Alpha Vantage error for {symbol}: {e}, falling back to Yahoo Finance")
-        
-        # Fall back to Yahoo Finance
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            
-            if not info or 'symbol' not in info:
-                return None
-            
-            # Get current price data
-            current_price = info.get('currentPrice') or info.get('regularMarketPrice')
-            previous_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
-            
-            if not current_price:
-                return None
-            
-            # Calculate change
-            price_change = current_price - previous_close if previous_close else 0
-            price_change_percent = (price_change / previous_close * 100) if previous_close and previous_close > 0 else 0
-            
-            quote = {
-                'symbol': symbol.upper(),
-                'name': info.get('longName', info.get('shortName', '')),
-                'price': round(current_price, 2),
-                'change': round(price_change, 2),
-                'change_percent': round(price_change_percent, 2),
-                'open': info.get('regularMarketOpen', info.get('open')),
-                'high': info.get('dayHigh', info.get('regularMarketDayHigh')),
-                'low': info.get('dayLow', info.get('regularMarketDayLow')),
-                'previous_close': previous_close,
-                'volume': info.get('volume', info.get('regularMarketVolume')),
-                'market_cap': info.get('marketCap'),
-                'pe_ratio': info.get('trailingPE'),
-                'dividend_yield': info.get('dividendYield'),
-                'fifty_two_week_high': info.get('fiftyTwoWeekHigh'),
-                'fifty_two_week_low': info.get('fiftyTwoWeekLow'),
-                'avg_volume': info.get('averageVolume'),
-                'exchange': info.get('exchange', 'UNKNOWN'),
-                'currency': info.get('currency', 'USD'),
-                'updated_at': datetime.utcnow().isoformat(),
-                'source': 'yahoo_finance'
-            }
-            
-            logger.info(f"📊 Quote for {symbol} from Yahoo Finance (fallback)")
-            return quote
-            
-        except Exception as e:
-            logger.error(f"Error getting quote for {symbol}: {e}")
+        """Get quote - FINNHUB ONLY"""
+        if not self.finnhub:
+            logger.error(f"❌ No Finnhub: {symbol}")
             return None
-
-    def get_historical_data(
-        self,
-        symbol: str,
-        period: str = '1y',
-        interval: str = '1d'
-    ) -> List[Dict[str, Any]]:
-        """
-        Get historical price data for a stock.
-        
-        Strategy:
-        1. Try Alpha Vantage first (if enabled) for daily data
-        2. Fall back to Yahoo Finance if Alpha Vantage unavailable
-        
-        Args:
-            symbol: Stock symbol
-            period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-            interval: Data interval (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo)
-            
-        Returns:
-            List of historical price dictionaries
-        """
-        # Try Alpha Vantage first for daily data (if enabled and interval is 1d)
-        if self.alpha_vantage and interval == '1d':
-            try:
-                # Use 'full' for periods longer than 100 days, 'compact' otherwise
-                outputsize = 'full' if period in ['1y', '2y', '5y', '10y', 'max'] else 'compact'
-                av_data = self.alpha_vantage.get_historical_data(symbol, outputsize)
-                
-                if av_data:
-                    logger.info(f"✅ Historical data for {symbol} from Alpha Vantage")
-                    return av_data
-                else:
-                    logger.debug(f"Alpha Vantage returned no historical data for {symbol}")
-            except Exception as e:
-                logger.warning(f"Alpha Vantage historical error for {symbol}: {e}, falling back to Yahoo Finance")
-        
-        # Fall back to Yahoo Finance
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period, interval=interval)
-            
-            if hist.empty:
-                return []
-            
-            # Convert DataFrame to list of dictionaries
-            data = []
-            for date, row in hist.iterrows():
-                data.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'open': round(float(row['Open']), 2),
-                    'high': round(float(row['High']), 2),
-                    'low': round(float(row['Low']), 2),
-                    'close': round(float(row['Close']), 2),
-                    'volume': int(row['Volume'])
-                })
-            
-            logger.info(f"📊 Historical data for {symbol} from Yahoo Finance (fallback)")
-            return data
-            
+            quote = self.finnhub.get_quote(symbol)
+            if quote:
+                logger.debug(f"✅ Finnhub quote: {symbol}")
+            return quote
         except Exception as e:
-            logger.error(f"Error getting historical data for {symbol}: {e}")
-            return []
-
-
-    def get_company_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """
-        Get detailed company information.
-        
-        Args:
-            symbol: Stock symbol
-            
-        Returns:
-            Dictionary with company details
-        """
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            
-            if not info or 'symbol' not in info:
-                return None
-            
-            company_info = {
-                'symbol': symbol.upper(),
-                'name': info.get('longName', info.get('shortName', '')),
-                'sector': info.get('sector'),
-                'industry': info.get('industry'),
-                'description': info.get('longBusinessSummary', info.get('description', '')),
-                'website': info.get('website'),
-                'employees': info.get('fullTimeEmployees'),
-                'country': info.get('country'),
-                'city': info.get('city'),
-                'state': info.get('state'),
-                'address': info.get('address1'),
-                'zip': info.get('zip'),
-                'phone': info.get('phone'),
-                'market_cap': info.get('marketCap'),
-                'enterprise_value': info.get('enterpriseValue'),
-                'exchange': info.get('exchange'),
-                'currency': info.get('currency', 'USD'),
-                'ipo_date': info.get('ipoDate')
-            }
-            
-            return company_info
-            
-        except Exception as e:
-            logger.error(f"Error getting company info for {symbol}: {e}")
+            logger.error(f"❌ Quote error {symbol}: {e}")
             return None
     
+    def get_historical_data(self, symbol: str, period: str = '1y', interval: str = '1d') -> List[Dict[str, Any]]:
+        """
+        Get historical data - Finnhub FIRST, Alpha Vantage FALLBACK
+        
+        Strategy:
+        1. Try Finnhub candles (fast, 60/min)
+        2. If Finnhub returns no data, try Alpha Vantage (slower, 5/min)
+        3. Cache aggressively to minimize API usage
+        """
+        # Try Finnhub first (FREE tier, 60 calls/min)
+        if self.finnhub:
+            try:
+                from datetime import datetime, timedelta
+                days = {'1d': 1, '5d': 5, '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '2y': 730}.get(period, 365)
+                to_ts = int(datetime.now().timestamp())
+                from_ts = int((datetime.now() - timedelta(days=days)).timestamp())
+                
+                data = self.finnhub.get_candles(symbol, 'D', from_ts, to_ts)
+                
+                if data and len(data) > 0:
+                    logger.info(f"✅ Finnhub historical {symbol}: {len(data)} records")
+                    return data
+                else:
+                    logger.debug(f"⚠️ Finnhub no data for {symbol}, trying Alpha Vantage...")
+            except Exception as e:
+                logger.warning(f"Finnhub historical error {symbol}: {e}")
+        
+        # Fallback to Alpha Vantage for historical (ONLY if Finnhub fails)
+        if self.alpha_vantage:
+            try:
+                # Determine output size based on period
+                outputsize = 'full' if period in ['1y', '2y', '5y'] else 'compact'
+                
+                data = self.alpha_vantage.get_historical_data(symbol, outputsize)
+                
+                if data and len(data) > 0:
+                    logger.info(f"✅ Alpha Vantage historical {symbol}: {len(data)} records")
+                    # Limit to requested period
+                    if period != 'full':
+                        days = {'1d': 1, '5d': 5, '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '2y': 730}.get(period, 365)
+                        data = data[:days]
+                    return data
+                else:
+                    logger.warning(f"⚠️ No Alpha Vantage data for {symbol}")
+            except Exception as e:
+                logger.error(f"❌ Alpha Vantage error {symbol}: {e}")
+        
+        logger.error(f"❌ No historical data available for {symbol}")
+        return []
+    
+    def get_company_info(self, symbol: str):
+        """Company info DISABLED"""
+        return None
+    
     def get_market_indices(self) -> List[Dict[str, Any]]:
-        """
-        Get major market stocks/indices quotes.
+        """Get market indices with caching"""
+        cache_key = "market:indices:full"
+        if self.cache_service:
+            cached = self.cache_service.get(cache_key)
+            if cached:
+                logger.debug("✅ Market indices from cache")
+                return cached
         
-        Note: Using popular stocks instead of indices since Alpha Vantage
-        doesn't support index symbols like ^GSPC, ^DJI
-        
-        Returns:
-            List of stock quotes (labeled as market leaders for display)
-        """
-        # Popular stocks that Alpha Vantage supports
-        market_symbols = {
-            'AAPL': 'Apple Inc.',
-            'MSFT': 'Microsoft Corp.',
-            'GOOGL': 'Alphabet Inc.',
-            'AMZN': 'Amazon.com Inc.',
-            'TSLA': 'Tesla Inc.',
-            'META': 'Meta Platforms Inc.',
-            'NVDA': 'NVIDIA Corp.'
-        }
+        logger.info("Fetching fresh market indices...")
+        symbols = {'AAPL': 'Apple Inc.', 'MSFT': 'Microsoft Corp.', 'GOOGL': 'Alphabet Inc.', 'AMZN': 'Amazon.com Inc.'}
         
         indices = []
-        for symbol, name in market_symbols.items():
+        for symbol, name in symbols.items():
             quote = self.get_quote(symbol)
             if quote:
                 quote['name'] = name
-                quote['category'] = 'market_leader'  # Tag for frontend display
+                quote['category'] = 'market_leader'
                 indices.append(quote)
+        
+        if self.cache_service and indices:
+            self.cache_service.set(cache_key, indices, 3600)
+            logger.info(f"Cached {len(indices)} indices (1hr)")
         
         return indices
     
-    def get_top_gainers_losers(
-        self,
-        market: str = 'US',
-        limit: int = 10
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Get top gainers and losers.
-        
-        Args:
-            market: Market to query (US, IN)
-            limit: Number of stocks to return
-            
-        Returns:
-            Dictionary with 'gainers' and 'losers' lists
-        """
+    def get_top_gainers_losers(self, market: str = 'US', limit: int = 10) -> Dict[str, List[Dict[str, Any]]]:
+        """Get top movers - uses cached quotes from popular stocks"""
         try:
-            # Define popular stocks for different markets
-            if market == 'US':
-                symbols = [
-                    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD',
-                    'NFLX', 'DIS', 'PYPL', 'INTC', 'CSCO', 'ADBE', 'CRM', 'ORCL',
-                    'BAC', 'JPM', 'WMT', 'V', 'MA', 'HD', 'PFE', 'KO', 'PEP'
-                ]
-            elif market == 'IN':
-                symbols = [
-                    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'HINDUNILVR.NS',
-                    'ICICIBANK.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'ITC.NS', 'KOTAKBANK.NS',
-                    'LT.NS', 'AXISBANK.NS', 'ASIANPAINT.NS', 'MARUTI.NS', 'HCLTECH.NS'
-                ]
-            else:
-                logger.warning(f"Unsupported market: {market}, defaulting to US")
-                symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA']
+            # Check cache first (1 hour TTL)
+            cache_key = f"market:movers:{market}:{limit}"
+            if self.cache_service:
+                cached = self.cache_service.get(cache_key)
+                if cached:
+                    logger.debug("✅ Top movers from cache")
+                    return cached
             
-            # Fetch quotes for all symbols
-            stocks_with_change = []
-            for symbol in symbols:
-                try:
-                    quote = self.get_quote(symbol)
-                    if quote and quote.get('change_percent') is not None:
-                        stocks_with_change.append(quote)
-                except Exception as e:
-                    logger.debug(f"Failed to get quote for {symbol}: {e}")
-                    continue
+            logger.info("Calculating top movers...")
+            symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD', 'NFLX', 'DIS', 
+                      'PYPL', 'INTC', 'CSCO', 'ADBE', 'CRM', 'ORCL']
             
-            # Sort by percentage change
-            stocks_with_change.sort(key=lambda x: x['change_percent'], reverse=True)
+            stocks = []
+            for symbol in symbols[:limit * 3]:  # Fetch 3x to ensure enough data
+                quote = self.get_quote(symbol)
+                if quote and quote.get('change_percent') is not None:
+                    stocks.append(quote)
             
-            # Split into gainers (positive change) and losers (negative change)
-            gainers = [s for s in stocks_with_change if s['change_percent'] > 0][:limit]
-            losers = [s for s in stocks_with_change if s['change_percent'] < 0][-limit:]
-            losers.reverse()  # Show worst performers first
+            stocks.sort(key=lambda x: x['change_percent'], reverse=True)
+            gainers = [s for s in stocks if s['change_percent'] > 0][:limit]
+            losers = [s for s in stocks if s['change_percent'] < 0][-limit:]
+            losers.reverse()
             
-            return {
-                'gainers': gainers,
-                'losers': losers
-            }
+            result = {'gainers': gainers, 'losers': losers}
             
+            # Cache for 1 hour
+            if self.cache_service:
+                self.cache_service.set(cache_key, result, 3600)
+                logger.info(f"Cached top movers (1hr): {len(gainers)} gainers, {len(losers)} losers")
+            
+            return result
         except Exception as e:
-            logger.error(f"Error getting top gainers/losers: {e}")
-            return {
-                'gainers': [],
-                'losers': []
-            }
+            logger.error(f"Error getting movers: {e}")
+            return {'gainers': [], 'losers': []}
     
     def validate_symbol(self, symbol: str) -> bool:
-        """
-        Validate if a stock symbol exists.
-        
-        Args:
-            symbol: Stock symbol to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
+        """Validate symbol"""
+        if not self.finnhub:
+            return False
         try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            return bool(info and 'symbol' in info)
-        except Exception:
+            quote = self.finnhub.get_quote(symbol)
+            return quote is not None
+        except:
             return False
