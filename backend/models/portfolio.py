@@ -77,7 +77,7 @@ class Portfolio(db.Model):
 class Position(db.Model):
     """Individual stock position in a portfolio."""
     
-    __tablename__ = 'positions'
+    __tablename__ = 'portfolio_positions'  # Changed from 'positions' to match actual database
     
     id = db.Column(db.Integer, primary_key=True)
     portfolio_id = db.Column(db.Integer, db.ForeignKey('portfolios.id'), nullable=False, index=True)

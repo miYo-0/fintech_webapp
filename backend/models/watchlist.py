@@ -50,33 +50,28 @@ class WatchlistItem(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     watchlist_id = db.Column(db.Integer, db.ForeignKey('watchlists.id'), nullable=False, index=True)
-    stock_id = db.Column(db.Integer, db.ForeignKey('stocks.id'), nullable=False, index=True)
+    symbol = db.Column(db.String(20), nullable=False, index=True)
     notes = db.Column(db.Text)
-    alert_price_above = db.Column(db.Float)  # Alert when price goes above
-    alert_price_below = db.Column(db.Float)  # Alert when price goes below
-    added_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
     watchlist = db.relationship('Watchlist', back_populates='items')
-    stock = db.relationship('Stock')
     
     # Composite unique constraint
     __table_args__ = (
-        db.UniqueConstraint('watchlist_id', 'stock_id', name='uq_watchlist_stock'),
+        db.UniqueConstraint('watchlist_id', 'symbol', name='uq_watchlist_symbol'),
     )
     
     def __repr__(self):
         """String representation."""
-        return f'<WatchlistItem {self.stock.symbol}>'
+        return f'<WatchlistItem {self.symbol}>'
     
     def to_dict(self):
         """Convert to dictionary."""
         return {
             'id': self.id,
             'watchlist_id': self.watchlist_id,
-            'stock': self.stock.to_dict() if self.stock else None,
+            'symbol': self.symbol,
             'notes': self.notes,
-            'alert_price_above': self.alert_price_above,
-            'alert_price_below': self.alert_price_below,
-            'added_at': self.added_at.isoformat() if self.added_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None
         }
